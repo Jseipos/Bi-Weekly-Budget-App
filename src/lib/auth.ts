@@ -35,7 +35,11 @@ export async function setSessionCookie(): Promise<void> {
   const cookieStore = await cookies();
   cookieStore.set(SESSION_COOKIE_NAME, token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    // Only mark the cookie Secure when explicitly serving over HTTPS.
+    // iOS Safari drops Set-Cookie: Secure over plain HTTP, which breaks
+    // Tailscale access (http://<host>:3000). Flip COOKIE_SECURE=true after
+    // enabling HTTPS (e.g. Tailscale MagicDNS + HTTPS certs).
+    secure: process.env.COOKIE_SECURE === "true",
     sameSite: "strict",
     maxAge: SESSION_MAX_AGE,
     path: "/",
