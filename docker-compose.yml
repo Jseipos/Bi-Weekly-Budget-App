@@ -1,0 +1,17 @@
+services:
+  budget-planner:
+    build: .
+    env_file:
+      - .env.production
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./data:/app/data
+      - ~/Library/Mobile Documents/com~apple~CloudDocs:/app/icloud:rw
+    environment:
+      - DATABASE_URL=/app/data/budget.db
+      - SESSION_SECRET=${SESSION_SECRET}
+      - ICLOUD_BASE_PATH=/app/icloud
+      - NODE_ENV=production
+      - MAX_UPLOAD_SIZE=${MAX_UPLOAD_SIZE:-10485760}
+    restart: unless-stopped
