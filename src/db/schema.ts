@@ -78,3 +78,45 @@ export const debtPayments = sqliteTable("debt_payments", {
     .notNull()
     .default(sql`(datetime('now'))`),
 });
+
+// ---- Imported Statements ----
+// Tracks each statement file the user imports (one row per file).
+// The original file is archived to iCloud at `icloudPath`; deleting a row
+// here cascades to the transactions it produced.
+export const importedStatements = sqliteTable("imported_statements", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  issuer: text("issuer").notNull(), // chase | capital_one | usaa | pnc | target
+  accountLabel: text("account_label"), // user-friendly e.g. "Chase Sapphire"
+  filename: text("filename").notNull(), // original filename
+  fileFormat: text("file_format").notNull(), // csv | pdf | ofx
+  icloudPath: text("icloud_path"), // archived original
+  statementStart: text("statement_start"), // ISO YYYY-MM-DD (earliest tx)
+  statementEnd: text("statement_end"), // ISO YYYY-MM-DD (latest tx)
+  transactionCount: integer("transaction_count").notNull().default(0),
+  importedAt: text("imported_at")
+    .notNull()
+    .default(sql`(datetime('now'))`),
+});
+
+// ---- Imported Transactions ----
+// Individual transactions parsed from a statement. Amount is signed:
+// negative for expenses (outflows), positive for income/credits/refunds.
+// `category` is null until the user assigns one in the review screen.
+// `fingerprint` is a stable hash (issuer + date + amount + normalized desc)
+// used to prevent re-importing the same transaction from a re-uploaded file.
+export const importedTransactions = sqliteTable("imported_transactions", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  statementId: integer("statement_id")
+    .notNull()
+    .references(() => importedStatements.id, { onDelete: "cascade" }),
+  date: text("date").notNull(), // ISO YYYY-MM-DD
+  amount: real("amount").notNull(), // signed: <0 expense, >0 income/credit
+  description: text("description").notNull(), // user-editable
+  rawDescription: text("raw_description").notNull(), // as parsed, never edited
+  category: text("category"), // null until assigned
+  issuerCategory: text("issuer_category"), // category from the bank's CSV, if any
+  fingerprint: text("fingerprint").notNull().unique(),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`(datetime('now'))`),
+});

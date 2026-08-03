@@ -41,7 +41,7 @@ Sessions are a plain `budget_session` cookie whose value is `<uuid>.<hmac-sha256
 ### Route layout
 
 - `src/app/page.tsx` — login (PIN entry, public)
-- `src/app/(protected)/` — protected route group: `dashboard`, `spending`, `recurring`, `debts`, `settings`. Shared `layout.tsx` here wraps with `NavBar`.
+- `src/app/(protected)/` — protected route group: `dashboard`, `spending`, `recurring`, `debts`, `settings`, `imports`. Shared `layout.tsx` here wraps with `NavBar`.
 - Middleware `matcher` in `src/middleware.ts` lists these paths explicitly — **keep it in sync** with `(protected)/` folders.
 
 ### Data flow — server actions, not API routes
@@ -61,14 +61,30 @@ Non-trivial calculations are isolated in `src/lib/` so they can be unit-tested w
 
 - `debt-calc.ts` — avalanche/snowball debt payoff simulation (used by `DebtSimulation.tsx`)
 - `date-calc.ts` — recurring-item date math across frequencies
-- `predictions.ts` — forward-looking monthly budget projections
+- `predictions.ts` — forward-looking monthly budget projections (pulls from both `unplanned_expenses` and categorized rows in `imported_transactions`)
 - `receipt-storage.ts` — maps uploaded receipts into category-specific iCloud subfolders
+- `statement-storage.ts` — archives bank/CC statement files to `<iCloud>/Statements/<Issuer>/<YYYY>/`
+- `statement-parsers/` — per-issuer CSV parsers (`chase`, `capital_one`, `usaa`, `pnc`, `target`) plus shared CSV utilities and a fingerprint helper used for deduplication
 
 Corresponding tests in `src/lib/__tests__/`. When changing behavior in these files, update/add tests there; avoid pushing this logic into components or server actions.
 
 ### Receipt storage and iCloud
 
 Receipts uploaded through `unplanned_expenses` are written to category-mapped folders under the iCloud mount (`ICLOUD_BASE_PATH`, default `/app/icloud` in the container → `~/Library/Mobile Documents/com~apple~CloudDocs` on the host). Each category row in `categories` has an optional `icloudFolderPath`; `receipt-storage.ts` resolves the destination. Files therefore sync to every Apple device on the same iCloud account without any app-side sync code. `MAX_UPLOAD_SIZE` caps the upload.
+
+### Statement imports
+
+Bank/CC CSV statements are uploaded through `/imports`. Flow:
+
+1. User picks issuer + uploads CSV → `parseStatement` server action streams the file to the matching parser in `src/lib/statement-parsers/` and returns parsed transactions WITHOUT writing anything yet.
+2. Review screen lets the user edit descriptions, assign categories, and uncheck rows. The original file bytes are round-tripped to the client as base64 so the server doesn't need to keep state between parse and confirm.
+3. On confirm, `confirmImport` writes a row to `imported_statements` and one row per included transaction to `imported_transactions` (in a single `db.transaction`), then archives the original file via `statement-storage.ts` to `<iCloud>/Statements/<Issuer>/<YYYY>/`.
+
+Deduplication is enforced at the DB level: `imported_transactions.fingerprint` is a UNIQUE SHA-256 hash of `issuer + date + amount + normalized description`. Re-uploading an overlapping statement silently skips duplicates and reports the count.
+
+Categorized imported transactions with negative amounts (expenses) feed into the dashboard via `predictions.ts` — they roll up into the same per-category totals as `unplanned_expenses`. Positive amounts (payments, refunds, income) are stored but excluded from the spending breakdown.
+
+When adding a new issuer parser: implement the `IssuerParser` signature in `src/lib/statement-parsers/<issuer>.ts`, add the issuer to the `Issuer` union in `types.ts` and to `ISSUER_LABELS`, register it in `index.ts`, and add a test in `__tests__/parsers.test.ts`.
 
 ### Path alias
 

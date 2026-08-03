@@ -33,5 +33,6 @@ export const config = {
     "/spending/:path*",
     "/debts/:path*",
     "/settings/:path*",
+    "/imports/:path*",
   ],
 };
